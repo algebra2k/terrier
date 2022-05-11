@@ -24,7 +24,8 @@ DataTable::DataTable(BlockStore *const store, const BlockLayout &layout, const l
 }
 
 DataTable::~DataTable() {
-  common::SpinLatch::ScopedSpinLatch guard(&blocks_latch_);
+  // common::SpinLatch::ScopedSpinLatch guard(&blocks_latch_);
+    common::SharedLatch::ScopedExclusiveLatch guard(&blocks_rw_latch_);
   for (RawBlock *block : blocks_) {
     StorageUtil::DeallocateVarlens(block, accessor_);
     for (col_id_t i : accessor_.GetBlockLayout().Varlens())
@@ -59,7 +60,8 @@ void DataTable::Scan(const common::ManagedPointer<transaction::TransactionContex
 }
 
 DataTable::SlotIterator &DataTable::SlotIterator::operator++() {
-  common::SpinLatch::ScopedSpinLatch guard(&table_->blocks_latch_);
+  // common::SpinLatch::ScopedSpinLatch guard(&table_->blocks_latch_);
+    common::SharedLatch::ScopedSharedLatch guard(&table_->blocks_rw_latch_);
   // Jump to the next block if already the last slot in the block.
   if (current_slot_.GetOffset() == table_->accessor_.GetBlockLayout().NumSlots() - 1) {
     ++block_;
@@ -72,7 +74,8 @@ DataTable::SlotIterator &DataTable::SlotIterator::operator++() {
 }
 
 DataTable::SlotIterator DataTable::end() const {  // NOLINT for STL name compability
-  common::SpinLatch::ScopedSpinLatch guard(&blocks_latch_);
+  // common::SpinLatch::ScopedSpinLatch guard(&blocks_latch_);
+    common::SharedLatch::ScopedSharedLatch guard(&blocks_rw_latch_);
   // TODO(Tianyu): Need to look in detail at how this interacts with compaction when that gets in.
 
   // The end iterator could either point to an unfilled slot in a block, or point to nothing if every block in the
@@ -141,7 +144,9 @@ void DataTable::CheckMoveHead(std::list<RawBlock *>::iterator block) {
   if (insertion_head_ == blocks_.end()) {
     RawBlock *new_block = NewBlock();
     // take latch
-    common::SpinLatch::ScopedSpinLatch guard_block(&blocks_latch_);
+    // common::SpinLatch::ScopedSpinLatch guard_block(&blocks_latch_);
+    // take exclusive latch
+    common::SharedLatch::ScopedExclusiveLatch guard(&blocks_rw_latch_);
     // insert block
     blocks_.push_back(new_block);
     // set insertion header to --end()
@@ -173,7 +178,9 @@ TupleSlot DataTable::Insert(const common::ManagedPointer<transaction::Transactio
       // No need to flip the busy status bit
       accessor_.Allocate(new_block, &result);
       // take latch
-      common::SpinLatch::ScopedSpinLatch guard(&blocks_latch_);
+      // common::SpinLatch::ScopedSpinLatch guard(&blocks_latch_);
+      // tack ex latch
+      common::SharedLatch::ScopedExclusiveLatch guard(&blocks_rw_latch_);
       // insert block
       blocks_.push_back(new_block);
       block = --blocks_.end();

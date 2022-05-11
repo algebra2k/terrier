@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "common/shared_latch.h"
 #include "common/performance_counter.h"
 #include "storage/projected_columns.h"
 #include "storage/storage_defs.h"
@@ -157,7 +158,8 @@ class DataTable {
    * @return the first tuple slot contained in the data table
    */
   SlotIterator begin() const {  // NOLINT for STL name compability
-    common::SpinLatch::ScopedSpinLatch guard(&blocks_latch_);
+    // common::SpinLatch::ScopedSpinLatch guard(&blocks_latch_);
+    common::SharedLatch::ScopedSharedLatch guard(&blocks_rw_latch_);
     return {this, blocks_.begin(), 0};
   }
 
@@ -245,7 +247,8 @@ class DataTable {
   // might be on it
   std::list<RawBlock *> blocks_;
   // latch used to protect block list
-  mutable common::SpinLatch blocks_latch_;
+  // mutable common::SpinLatch blocks_latch_;
+  mutable common::SharedLatch blocks_rw_latch_;
   // latch used to protect insertion_head_
   mutable common::SpinLatch header_latch_;
   std::list<RawBlock *>::iterator insertion_head_;
